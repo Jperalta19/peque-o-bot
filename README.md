@@ -25,8 +25,8 @@ Arranca el bot desde Termux con:
 
 ```bash
 cd "$HOME/pequeño bot"
-chmod +x iniciar_termux.sh
-./iniciar_termux.sh
+chmod +x termux.sh
+./termux.sh
 ```
 
 El script entra en Ubuntu con `--termux-home` y ejecuta allí `iniciar.sh`. La primera ejecución puede tardar mientras Ubuntu instala Python y las dependencias.
