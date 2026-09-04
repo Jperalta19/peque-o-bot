@@ -29,37 +29,9 @@ chmod +x termux.sh
 ./termux.sh
 ```
 
-El script entra en Ubuntu con `--termux-home` y ejecuta allí `iniciar.sh`. La primera ejecución puede tardar mientras Ubuntu instala Python y las dependencias.
+El script entra en Ubuntu con `proot-distro login --termux-home`, se relanza dentro de la distro y allí instala Python, crea el entorno virtual, configura `.env` y ejecuta el bot. La primera ejecución puede tardar mientras Ubuntu instala Python y las dependencias.
 
-## Instalación
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-cp .env.example .env
-```
-
-Edita `.env` y reemplaza `TELEGRAM_TOKEN` por el token real de tu bot.
-
-## Ejecución
-
-Dentro de Ubuntu, la forma más sencilla es usar el script de configuración y arranque:
-
-```bash
-./iniciar.sh
-```
-
-La primera vez crea `.venv`, instala las dependencias, prepara `.env` y solicita el token de Telegram sin mostrarlo. Las siguientes veces reutiliza la configuración existente y actualiza `yt-dlp`, que debe mantenerse al día porque Instagram y Facebook cambian con frecuencia.
-
-También puedes ejecutarlo manualmente:
-
-```bash
-source .venv/bin/activate
-python bot.py
-```
-
-Después abre tu bot en Telegram, pulsa `/start` y envíale un enlace.
+La primera vez solicita el token de Telegram sin mostrarlo. Las siguientes veces reutiliza la configuración existente y actualiza `yt-dlp`, que debe mantenerse al día porque Instagram y Facebook cambian con frecuencia. Después abre tu bot en Telegram, pulsa `/start` y envíale un enlace.
 
 ## Notas
 
