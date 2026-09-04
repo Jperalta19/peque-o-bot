@@ -1,6 +1,6 @@
 # Bot de Telegram para reels
 
-Bot pequeño en Python que recibe enlaces públicos de reels de Instagram y Facebook y devuelve el vídeo en Telegram.
+Bot pequeño en Python que recibe enlaces públicos de reels de Instagram, Facebook y vídeos de TikTok y devuelve el vídeo en Telegram.
 
 Cada vídeo se envía con el nombre o identificador de la cuenta detectada y el enlace original de la publicación en el caption.
 
@@ -17,7 +17,7 @@ Coloca esta carpeta dentro del directorio HOME de Termux. En Termux instala Ubun
 
 ```bash
 pkg update
-pkg install proot-distro termux-tools
+pkg install proot-distro termux-tools termux-api
 proot-distro install ubuntu
 ```
 
@@ -44,11 +44,12 @@ El script entra en Ubuntu con `proot-distro login --termux-home`, se relanza den
 
 Para evitar que Android cierre Termux por ahorro de batería, desactiva la optimización de batería para Termux en los ajustes del sistema. `termux-wake-lock` ayuda a mantener el proceso activo, pero no puede impedir que Android fuerce el cierre de la aplicación.
 
-La primera vez solicita el token de Telegram sin mostrarlo. Las siguientes veces reutiliza la configuración existente y actualiza `yt-dlp`, que debe mantenerse al día porque Instagram y Facebook cambian con frecuencia. Si Python se cierra por un error, el script lo vuelve a iniciar automáticamente. El bot también reintenta indefinidamente la conexión con Telegram cuando la red se corta. Después abre tu bot en Telegram, pulsa `/start` y envíale un enlace.
+La primera vez solicita el token de Telegram sin mostrarlo. Las siguientes veces reutiliza la configuración existente y actualiza `yt-dlp`, que debe mantenerse al día porque Instagram y Facebook cambian con frecuencia. El menú de Telegram se configura automáticamente con solo `/start`, `/info` y `/status`. Si Python se cierra por un error, el script lo vuelve a iniciar automáticamente. El bot también reintenta indefinidamente la conexión con Telegram cuando la red se corta. Después abre tu bot en Telegram, pulsa `/start` y envíale un enlace.
 
 ## Notas
 
-- Solo se aceptan dominios de Instagram y Facebook, y se procesa un enlace por mensaje.
+- Solo se aceptan dominios de Instagram, Facebook y TikTok, y se procesa un enlace por mensaje.
+- `/status` obtiene la batería mediante `termux-battery-status`; instala también la aplicación Termux:API en Android y concede los permisos necesarios para que ese dato esté disponible.
 - El archivo debe ser público y pesar menos de 50 MB, que es el límite práctico usado por este bot para enviarlo mediante Telegram.
 - Algunas publicaciones requieren autenticación o no son compatibles con `yt-dlp`. Puedes indicar una ruta a un archivo de cookies con `COOKIES_FILE`, pero nunca compartas ese archivo ni lo subas al repositorio.
 - Usa el bot únicamente con contenido que tengas permiso para descargar y conservar. Respeta los términos de servicio y los derechos de autor de cada plataforma.

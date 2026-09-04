@@ -2,13 +2,18 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
 import tempfile
+import time
+import urllib.error
+import urllib.request
+import json
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.constants import ChatAction
 from telegram.error import TelegramError
 from telegram.ext import (
@@ -31,7 +36,17 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "120"))
 MAX_FILE_SIZE = 50 * 1024 * 1024
-SUPPORTED_HOSTS = {"instagram.com", "www.instagram.com", "facebook.com", "www.facebook.com", "fb.watch"}
+SUPPORTED_HOSTS = {
+    "instagram.com",
+    "www.instagram.com",
+    "facebook.com",
+    "www.facebook.com",
+    "fb.watch",
+    "tiktok.com",
+    "www.tiktok.com",
+    "vm.tiktok.com",
+    "vt.tiktok.com",
+}
 URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 
 
@@ -103,19 +118,77 @@ def explain_download_error(error: Exception) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     await update.message.reply_text(
-        "Envíame el enlace público de un reel de Instagram o Facebook y lo descargaré.\n\n"
-        "Usa /ayuda para ver ejemplos. Descarga únicamente contenido que tengas derecho a guardar."
+        "Envíame el enlace público de Instagram, Facebook o TikTok y lo descargaré.\n\n"
+        "Usa /info para conocer el bot o /status para comprobar el servicio.\n"
+        "Descarga únicamente contenido que tengas derecho a guardar."
     )
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     await update.message.reply_text(
-        "Enlaces compatibles:\n"
-        "- https://www.instagram.com/reel/...\n"
-        "- https://www.facebook.com/reel/...\n"
-        "- https://fb.watch/...\n\n"
-        "El contenido debe ser público y pesar menos de 50 MB."
+        "Bot descargador de vídeos públicos de Instagram, Facebook y TikTok.\n\n"
+        "Envíame un enlace compatible y recibirás el vídeo con la cuenta detectada y el enlace "
+        "de la publicación. El límite de envío es de 50 MB.\n\n"
+        "Comandos disponibles:\n"
+        "/start - Iniciar el bot\n"
+        "/info - Ver este resumen\n"
+        "/status - Consultar el estado del servicio"
+    )
+
+
+def read_battery_status() -> str:
+    battery_command = "/data/data/com.termux/files/usr/bin/termux-battery-status"
+    try:
+        result = subprocess.run(
+            [battery_command],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=True,
+        )
+        battery = json.loads(result.stdout)
+        percentage = battery.get("percentage")
+        status = battery.get("status") or "desconocido"
+        if percentage is None:
+            return "No disponible"
+        return f"{percentage}% ({status})"
+    except (FileNotFoundError, json.JSONDecodeError, subprocess.SubprocessError, OSError):
+        return "No disponible (instala Termux:API y ejecuta termux-battery-status en Termux)"
+
+
+def check_internet() -> str:
+    started_at = time.monotonic()
+    try:
+        request = urllib.request.Request("https://api.telegram.org", method="HEAD")
+        with urllib.request.urlopen(request, timeout=8):
+            elapsed = (time.monotonic() - started_at) * 1000
+        return f"Conectada ({elapsed:.0f} ms)"
+    except (OSError, urllib.error.URLError):
+        return "Sin conexión"
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    del context
+    battery, internet = await asyncio.gather(
+        asyncio.to_thread(read_battery_status),
+        asyncio.to_thread(check_internet),
+    )
+    await update.message.reply_text(
+        "Estado del servicio\n\n"
+        "Bot: Activo y respondiendo\n"
+        f"Conexión a internet: {internet}\n"
+        f"Batería de la tablet: {battery}"
+    )
+
+
+async def configure_commands(application: Application) -> None:
+    await application.bot.set_my_commands(
+        [
+            BotCommand("start", "Iniciar el bot"),
+            BotCommand("info", "Resumen y descripción del bot"),
+            BotCommand("status", "Estado, batería y conexión"),
+        ]
     )
 
 
@@ -127,7 +200,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     url = extract_supported_url(update.message.text)
     if not url:
         await update.message.reply_text(
-            "No detecté un enlace compatible. Envíame una URL pública de Instagram o Facebook."
+            "No detecté un enlace compatible. Envíame una URL pública de Instagram, Facebook o TikTok."
         )
         return
 
@@ -148,8 +221,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.warning("yt-dlp no pudo descargar %s: %s", url, error, exc_info=True)
         await status_message.edit_text(
             f"{explain_download_error(error)}\n\n"
-            "Instagram y Facebook pueden exigir cookies incluso para publicaciones visibles "
-            "desde un navegador."
+            "Instagram, Facebook y TikTok pueden exigir cookies incluso para publicaciones "
+            "visibles desde un navegador."
         )
     except TelegramError:
         logger.exception("Telegram no pudo recibir el vídeo de %s", url)
@@ -190,10 +263,12 @@ def main() -> None:
         .token(TELEGRAM_TOKEN)
         .request(telegram_request)
         .get_updates_request(polling_request)
+        .post_init(configure_commands)
         .build()
     )
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("ayuda", help_command))
+    application.add_handler(CommandHandler("info", info_command))
+    application.add_handler(CommandHandler("status", status_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
