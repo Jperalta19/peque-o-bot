@@ -95,7 +95,15 @@ python -m pip install --upgrade pip
 python -m pip install --upgrade -r requirements.txt
 
 if [[ ! -f .env ]]; then
-    cp .env.example .env
+    printf '%s\n' \
+        '# Token generado por @BotFather en Telegram' \
+        'TELEGRAM_TOKEN=pon_aqui_el_token_del_bot' \
+        '' \
+        '# Opcional: ruta a cookies.txt si alguna plataforma exige sesión' \
+        '# COOKIES_FILE=/ruta/absoluta/a/cookies.txt' \
+        '' \
+        'DOWNLOAD_TIMEOUT_SECONDS=120' > .env
+    echo "Se creó .env; introduce el token de Telegram cuando se solicite."
 fi
 
 if grep -q '^TELEGRAM_TOKEN=pon_aqui_el_token_del_bot$' .env; then
