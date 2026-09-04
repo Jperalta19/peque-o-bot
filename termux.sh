@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-if [[ "${BOT_IN_UBUNTU:-}" != "1" ]]; then
+if [[ "${BOT_IN_UBUNTU:-}" != "1" ]] && ! ([[ -f /etc/os-release ]] && grep -qi '^ID=ubuntu' /etc/os-release); then
     if ! command -v proot-distro >/dev/null 2>&1; then
         echo "Error: este script debe ejecutarse desde Termux, no dentro de Ubuntu." >&2
         echo "En Termux instala proot-distro con: pkg install proot-distro" >&2
@@ -40,6 +40,18 @@ if [[ "${BOT_IN_UBUNTU:-}" != "1" ]]; then
         echo "La sesión de Ubuntu terminó (código $proot_status). Reintentando en 15 segundos..." >&2
         sleep 15
     done
+fi
+
+if [[ "${BOT_IN_UBUNTU:-}" != "1" ]] && [[ -f /etc/os-release ]] && grep -qi '^ID=ubuntu' /etc/os-release; then
+    echo "Ubuntu detectado; ejecutando el bot dentro de la sesión proot actual."
+    if command -v termux-wake-lock >/dev/null 2>&1; then
+        termux-wake-lock
+    elif [[ -x /data/data/com.termux/files/usr/bin/termux-wake-lock ]]; then
+        /data/data/com.termux/files/usr/bin/termux-wake-lock
+    else
+        echo "Aviso: no se pudo activar termux-wake-lock desde Ubuntu." >&2
+        echo "Actívalo antes de entrar con: termux-wake-lock" >&2
+    fi
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then

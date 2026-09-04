@@ -29,16 +29,16 @@ chmod +x termux.sh
 ./termux.sh
 ```
 
-Ese comando debe ejecutarse en la aplicación Termux, donde el prompt normalmente termina en `$`. No lo ejecutes desde una sesión que ya muestre `root@localhost`, porque esa es la shell de Ubuntu. El bot siempre se ejecuta dentro de Ubuntu iniciado mediante `proot-distro`.
+El script puede ejecutarse directamente desde la sesión Ubuntu de `proot-distro`, donde el prompt aparece como `root@localhost`. También puede lanzarse desde Termux; en ese caso entra en Ubuntu automáticamente. El bot siempre termina ejecutándose dentro de Ubuntu.
 
 Para actualizar el código desde GitHub sin borrar la carpeta ni volver a clonarla:
 
 ```bash
-chmod +x up
-./up
+chmod +x up.sh
+./up.sh
 ```
 
-`up` actualiza la rama actual con `git pull --rebase --autostash` y después inicia el bot mediante `termux.sh`. Si tienes cambios locales en archivos controlados por Git, los conserva y los reaplica automáticamente. Ejecuta `up` desde Termux, no desde la shell `root@localhost` de Ubuntu.
+`up.sh` actualiza la rama actual con `git pull --rebase --autostash` y después inicia el bot mediante `termux.sh`. Si tienes cambios locales en archivos controlados por Git, los conserva y los reaplica automáticamente. Puede ejecutarse desde Termux o desde la shell `root@localhost` de Ubuntu.
 
 El script entra en Ubuntu con `proot-distro login --termux-home`, se relanza dentro de la distro y allí instala Python, crea el entorno virtual, configura `.env` y ejecuta el bot. También activa `termux-wake-lock` para que Android no suspenda el proceso al apagar la pantalla. La primera ejecución puede tardar mientras Ubuntu instala Python y las dependencias.
 

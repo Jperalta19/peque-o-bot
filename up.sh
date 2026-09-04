@@ -1,15 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
-if [[ -n "${BOT_IN_UBUNTU:-}" ]] || [[ "${PREFIX:-}" != *com.termux* ]]; then
-    echo "Error: ejecuta up desde Termux, no desde dentro de Ubuntu." >&2
-    echo "Sal de Ubuntu con: exit" >&2
-    exit 1
-fi
-
 if ! command -v git >/dev/null 2>&1; then
-    echo "Error: no se encontró git en Termux." >&2
-    echo "Instálalo con: pkg install git" >&2
+    echo "Error: no se encontró git en el entorno actual." >&2
+    echo "En Ubuntu instala git con: apt update && apt install -y git" >&2
+    echo "En Termux instala git con: pkg install git" >&2
     exit 1
 fi
 
