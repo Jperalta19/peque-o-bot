@@ -18,6 +18,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 load_dotenv()
 
@@ -165,17 +166,39 @@ def main() -> None:
     if not TELEGRAM_TOKEN:
         raise RuntimeError("Falta TELEGRAM_TOKEN. Cópialo en un archivo .env.")
 
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    for proxy_variable in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        os.environ.pop(proxy_variable, None)
+
+    telegram_request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=30,
+        read_timeout=60,
+        write_timeout=60,
+        pool_timeout=30,
+        httpx_kwargs={"trust_env": False},
+    )
+    polling_request = HTTPXRequest(
+        connection_pool_size=2,
+        connect_timeout=30,
+        read_timeout=60,
+        write_timeout=60,
+        pool_timeout=30,
+        httpx_kwargs={"trust_env": False},
+    )
+    application = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .request(telegram_request)
+        .get_updates_request(polling_request)
+        .build()
+    )
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("ayuda", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
         bootstrap_retries=-1,
-        connect_timeout=30,
-        read_timeout=60,
-        write_timeout=60,
-        pool_timeout=30,
+        timeout=30,
     )
 
 
