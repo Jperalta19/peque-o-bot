@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 if [[ "${BOT_IN_UBUNTU:-}" != "1" ]]; then
     if ! command -v proot-distro >/dev/null 2>&1; then
-        echo "Error: no se encontró proot-distro en Termux." >&2
-        echo "Instálalo con: pkg install proot-distro" >&2
+        echo "Error: este script debe ejecutarse desde Termux, no dentro de Ubuntu." >&2
+        echo "En Termux instala proot-distro con: pkg install proot-distro" >&2
         exit 1
     fi
 
