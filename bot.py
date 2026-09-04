@@ -213,7 +213,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             with file_path.open("rb") as video:
                 await update.message.reply_video(
                     video=video,
-                    caption=f"Cuenta: {account_name}\nPublicación: {url}",
+                    caption=f"Publicación: {url}",
                     supports_streaming=True,
                 )
         await status_message.delete()
