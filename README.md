@@ -17,7 +17,7 @@ Coloca esta carpeta dentro del directorio HOME de Termux. En Termux instala Ubun
 
 ```bash
 pkg update
-pkg install proot-distro
+pkg install proot-distro termux-tools
 proot-distro install ubuntu
 ```
 
@@ -29,9 +29,11 @@ chmod +x termux.sh
 ./termux.sh
 ```
 
-El script entra en Ubuntu con `proot-distro login --termux-home`, se relanza dentro de la distro y allí instala Python, crea el entorno virtual, configura `.env` y ejecuta el bot. La primera ejecución puede tardar mientras Ubuntu instala Python y las dependencias.
+El script entra en Ubuntu con `proot-distro login --termux-home`, se relanza dentro de la distro y allí instala Python, crea el entorno virtual, configura `.env` y ejecuta el bot. También activa `termux-wake-lock` para que Android no suspenda el proceso al apagar la pantalla. La primera ejecución puede tardar mientras Ubuntu instala Python y las dependencias.
 
-La primera vez solicita el token de Telegram sin mostrarlo. Las siguientes veces reutiliza la configuración existente y actualiza `yt-dlp`, que debe mantenerse al día porque Instagram y Facebook cambian con frecuencia. Después abre tu bot en Telegram, pulsa `/start` y envíale un enlace.
+Para evitar que Android cierre Termux por ahorro de batería, desactiva la optimización de batería para Termux en los ajustes del sistema. `termux-wake-lock` ayuda a mantener el proceso activo, pero no puede impedir que Android fuerce el cierre de la aplicación.
+
+La primera vez solicita el token de Telegram sin mostrarlo. Las siguientes veces reutiliza la configuración existente y actualiza `yt-dlp`, que debe mantenerse al día porque Instagram y Facebook cambian con frecuencia. Si Python se cierra por un error, el script lo vuelve a iniciar automáticamente. El bot también reintenta indefinidamente la conexión con Telegram cuando la red se corta. Después abre tu bot en Telegram, pulsa `/start` y envíale un enlace.
 
 ## Notas
 

@@ -8,6 +8,15 @@ if [[ "${BOT_IN_UBUNTU:-}" != "1" ]]; then
         exit 1
     fi
 
+    if command -v termux-wake-lock >/dev/null 2>&1; then
+        termux-wake-lock
+        wake_lock_active=1
+        trap 'if (( wake_lock_active == 1 )); then termux-wake-unlock; fi' EXIT INT TERM
+    else
+        echo "Aviso: termux-wake-lock no está disponible; Android podría suspender el proceso." >&2
+        echo "Instálalo con: pkg install termux-tools" >&2
+    fi
+
     PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     TERMUX_HOME="${HOME:?No se pudo determinar el HOME de Termux}"
 
@@ -21,8 +30,16 @@ if [[ "${BOT_IN_UBUNTU:-}" != "1" ]]; then
             ;;
     esac
 
-    printf -v ubuntu_command 'cd %q && exec ./termux.sh' "$PROJECT_IN_UBUNTU"
-    exec proot-distro login --termux-home ubuntu -- env BOT_IN_UBUNTU=1 bash -lc "$ubuntu_command"
+    printf -v ubuntu_command 'cd %q && exec bash ./termux.sh' "$PROJECT_IN_UBUNTU"
+    while true; do
+        if proot-distro login --termux-home ubuntu -- env BOT_IN_UBUNTU=1 bash -lc "$ubuntu_command"; then
+            exit 0
+        else
+            proot_status=$?
+        fi
+        echo "La sesión de Ubuntu terminó (código $proot_status). Reintentando en 15 segundos..." >&2
+        sleep 15
+    done
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -88,4 +105,16 @@ if grep -q '^TELEGRAM_TOKEN=pon_aqui_el_token_del_bot$' .env; then
 fi
 
 echo "Iniciando bot dentro de Ubuntu..."
-exec python bot.py
+while true; do
+    if python bot.py; then
+        bot_status=0
+    else
+        bot_status=$?
+    fi
+    if (( bot_status == 130 || bot_status == 143 )); then
+        echo "Bot detenido por el usuario."
+        exit 0
+    fi
+    echo "El bot se detuvo (código $bot_status). Reintentando en 15 segundos..." >&2
+    sleep 15
+done
