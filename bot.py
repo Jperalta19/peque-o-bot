@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -170,16 +171,32 @@ def check_internet() -> str:
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
-    battery, internet = await asyncio.gather(
-        asyncio.to_thread(read_battery_status),
-        asyncio.to_thread(check_internet),
-    )
-    await update.message.reply_text(
-        "Estado del servicio\n\n"
-        "Bot: Activo y respondiendo\n"
-        f"Conexión a internet: {internet}\n"
-        f"Batería de la tablet: {battery}"
-    )
+    status_message = await update.message.reply_text("Escribiendo el estado del bot...")
+
+    async def keep_typing() -> None:
+        while True:
+            try:
+                await update.message.chat.send_action(ChatAction.TYPING)
+            except TelegramError:
+                logger.debug("No se pudo actualizar la animación de escritura", exc_info=True)
+            await asyncio.sleep(4)
+
+    typing_task = asyncio.create_task(keep_typing())
+    try:
+        battery, internet = await asyncio.gather(
+            asyncio.to_thread(read_battery_status),
+            asyncio.to_thread(check_internet),
+        )
+        await status_message.edit_text(
+            "Estado del servicio\n\n"
+            "Bot: Activo y respondiendo\n"
+            f"Conexión a internet: {internet}\n"
+            f"Batería de la tablet: {battery}"
+        )
+    finally:
+        typing_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await typing_task
 
 
 async def configure_commands(application: Application) -> None:
