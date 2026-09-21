@@ -1,6 +1,6 @@
 # Bot de Telegram para reels
 
-Bot pequeño en Python que recibe enlaces públicos de reels de Instagram, Facebook y vídeos de TikTok y devuelve el vídeo en Telegram.
+Bot pequeño en Python que recibe enlaces públicos de reels de Instagram, Facebook, TikTok y vídeos de X/Twitter, y devuelve el vídeo en Telegram.
 
 Cada vídeo se envía con el nombre o identificador de la cuenta detectada y el enlace original de la publicación en el caption.
 
@@ -55,7 +55,8 @@ La primera vez solicita el token de Telegram sin mostrarlo. Las siguientes veces
 
 ## Notas
 
-- Solo se aceptan dominios de Instagram, Facebook y TikTok, y se procesa un enlace por mensaje.
+- Solo se aceptan dominios de Instagram, Facebook, TikTok y X/Twitter, y se procesa un enlace por mensaje.
+- Antes de descargar, se analizan las calidades disponibles y se elige la de mayor resolución cuyo tamaño estimado sea inferior a 50 MB.
 - `/status` obtiene la batería mediante `termux-battery-status`; instala también la aplicación Termux:API en Android y concede los permisos necesarios para que ese dato esté disponible.
 - El archivo debe ser público y pesar menos de 50 MB, que es el límite práctico usado por este bot para enviarlo mediante Telegram.
 - Algunas publicaciones requieren autenticación o no son compatibles con `yt-dlp`. Puedes indicar una ruta a un archivo de cookies con `COOKIES_FILE`, pero nunca compartas ese archivo ni lo subas al repositorio.

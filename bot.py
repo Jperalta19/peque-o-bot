@@ -47,6 +47,11 @@ SUPPORTED_HOSTS = {
     "www.tiktok.com",
     "vm.tiktok.com",
     "vt.tiktok.com",
+    "x.com",
+    "www.x.com",
+    "twitter.com",
+    "www.twitter.com",
+    "mobile.twitter.com",
 }
 URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 
@@ -64,11 +69,50 @@ def extract_supported_url(text: str) -> str | None:
     return None
 
 
-def download_reel(url: str, output_dir: str) -> tuple[Path, str]:
+def _estimated_size(format_info: dict, duration: float | None) -> int | None:
+    size = format_info.get("filesize") or format_info.get("filesize_approx")
+    if size:
+        return int(size)
+    bitrate = format_info.get("tbr")
+    if bitrate and duration:
+        return int(float(bitrate) * 1000 * duration / 8 * 1.1)
+    return None
+
+
+def _select_format(info: dict) -> tuple[str, int, int | None]:
+    duration = info.get("duration")
+    candidates = []
+    for format_info in info.get("formats", []):
+        if format_info.get("vcodec") in {None, "none"}:
+            continue
+        if format_info.get("acodec") in {None, "none"}:
+            continue
+        size = _estimated_size(format_info, duration)
+        if size is None or size > MAX_FILE_SIZE:
+            continue
+        candidates.append((
+            format_info,
+            size,
+            format_info.get("height") or 0,
+            format_info.get("tbr") or 0,
+        ))
+
+    if not candidates:
+        raise RuntimeError("No hay una calidad de vídeo cuyo tamaño se pueda confirmar por debajo de 50 MB.")
+
+    selected, size, _, _ = max(candidates, key=lambda item: (item[2], item[3]))
+    return str(selected["format_id"]), selected.get("height") or 0, size
+
+
+def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
     output_template = str(Path(output_dir) / "reel.%(ext)s")
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as analyzer:
+        info = analyzer.extract_info(url, download=False)
+        format_id, height, estimated_size = _select_format(info)
+
     options = {
         "outtmpl": output_template,
-        "format": "best[ext=mp4][filesize<50M]/best[filesize<50M]/best",
+        "format": format_id,
         "merge_output_format": "mp4",
         "noplaylist": True,
         "max_filesize": MAX_FILE_SIZE,
@@ -83,7 +127,7 @@ def download_reel(url: str, output_dir: str) -> tuple[Path, str]:
         options["cookiefile"] = cookies_file
 
     with yt_dlp.YoutubeDL(options) as downloader:
-        info = downloader.extract_info(url, download=True)
+        downloaded_info = downloader.extract_info(url, download=True)
 
     downloaded_files = [path for path in Path(output_dir).glob("reel.*") if path.is_file()]
     if not downloaded_files:
@@ -92,14 +136,14 @@ def download_reel(url: str, output_dir: str) -> tuple[Path, str]:
     file_path = downloaded_files[0]
     if file_path.stat().st_size > MAX_FILE_SIZE:
         file_path.unlink(missing_ok=True)
-        raise RuntimeError("El reel supera el límite de 50 MB de Telegram.")
+        raise RuntimeError("El vídeo supera el límite de 50 MB de Telegram.")
     account_name = (
-        info.get("uploader_id")
-        or info.get("uploader")
-        or info.get("channel")
+        downloaded_info.get("uploader_id")
+        or downloaded_info.get("uploader")
+        or downloaded_info.get("channel")
         or "Cuenta no identificada"
     )
-    return file_path, str(account_name)
+    return file_path, str(account_name), height, estimated_size or file_path.stat().st_size
 
 
 def explain_download_error(error: Exception) -> str:
@@ -112,14 +156,16 @@ def explain_download_error(error: Exception) -> str:
     if any(term in error_text for term in ("requested format", "format is not available")):
         return "No hay un formato compatible disponible para ese reel."
     if any(term in error_text for term in ("too large", "filesize", "50 mb")):
-        return "El reel supera el límite de 50 MB de Telegram."
+        return "El vídeo supera el límite de 50 MB de Telegram."
+    if "tamaño se pueda confirmar" in error_text:
+        return "No encontré una calidad cuyo tamaño pueda confirmarse por debajo de 50 MB."
     return "No se pudo obtener el vídeo. Comprueba que el enlace sea público y válido."
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     await update.message.reply_text(
-        "Envíame el enlace público de Instagram, Facebook o TikTok y lo descargaré.\n\n"
+        "Envíame el enlace público de Instagram, Facebook, TikTok o X y lo descargaré.\n\n"
         "Usa /info para conocer el bot o /status para comprobar el servicio.\n"
         "Descarga únicamente contenido que tengas derecho a guardar."
     )
@@ -128,7 +174,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     await update.message.reply_text(
-        "Bot descargador de vídeos públicos de Instagram, Facebook y TikTok.\n\n"
+        "Bot descargador de vídeos públicos de Instagram, Facebook, TikTok y X.\n\n"
         "Envíame un enlace compatible y recibirás el vídeo con la cuenta detectada y el enlace "
         "de la publicación. El límite de envío es de 50 MB.\n\n"
         "Comandos disponibles:\n"
@@ -217,24 +263,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     url = extract_supported_url(update.message.text)
     if not url:
         await update.message.reply_text(
-            "No detecté un enlace compatible. Envíame una URL pública de Instagram, Facebook o TikTok."
+            "No detecté un enlace compatible. Envíame una URL pública de Instagram, Facebook, TikTok o X."
         )
         return
 
-    status_message = await update.message.reply_text("Descargando el reel...")
+    status_message = await update.message.reply_text("Analizando tamaños y calidades disponibles...")
     await update.message.chat.send_action(ChatAction.UPLOAD_VIDEO)
 
     try:
         with tempfile.TemporaryDirectory(prefix="telegram-reel-") as temp_dir:
-            file_path, account_name = await asyncio.to_thread(download_reel, url, temp_dir)
+            file_path, account_name, height, estimated_size = await asyncio.to_thread(download_reel, url, temp_dir)
             with file_path.open("rb") as video:
                 await update.message.reply_video(
                     video=video,
-                    caption=f"Publicación: {url}",
+                    caption=(
+                        f"Publicación: {url}\n"
+                        f"Cuenta: {account_name}\n"
+                        f"Calidad: {height}p ({estimated_size / (1024 * 1024):.1f} MB estimados)"
+                    ),
                     supports_streaming=True,
                 )
         await status_message.delete()
-    except yt_dlp.utils.DownloadError as error:
+    except (RuntimeError, yt_dlp.utils.DownloadError) as error:
         logger.warning("yt-dlp no pudo descargar %s: %s", url, error, exc_info=True)
         await status_message.edit_text(
             f"{explain_download_error(error)}\n\n"
