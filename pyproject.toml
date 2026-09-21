@@ -2,7 +2,7 @@
 line-length = 100
 
 [tool.vercel]
-entrypoint = "bot.py"
+entrypoint = "api.index:app"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
