@@ -11,6 +11,13 @@ Cada vídeo se envía con el nombre o identificador de la cuenta detectada y el 
 - Acceso a internet.
 - En Termux: `proot-distro` con Ubuntu instalado.
 
+## Vercel
+
+El entrypoint de Vercel está declarado explícitamente en `pyproject.toml` como `bot.py`.
+Este proyecto usa polling continuo de Telegram, por lo que Vercel Functions no es un entorno
+adecuado para ejecutarlo de forma persistente. Para mantener el bot activo, ejecútalo en Termux
+con `termux.sh` o en un servicio con un proceso persistente.
+
 ## Termux + Ubuntu
 
 Coloca esta carpeta dentro del directorio HOME de Termux. En Termux instala Ubuntu y las herramientas necesarias:
