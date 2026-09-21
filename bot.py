@@ -79,19 +79,43 @@ def _estimated_size(format_info: dict, duration: float | None) -> int | None:
     return None
 
 
-def _select_format(info: dict) -> tuple[str, int, int | None]:
+def _select_format(info: dict) -> tuple[str, int, int]:
     duration = info.get("duration")
+    formats = info.get("formats", [])
+    audio_formats = [
+        format_info
+        for format_info in formats
+        if format_info.get("acodec") not in {None, "none"}
+        and format_info.get("vcodec") in {None, "none"}
+    ]
+    best_audio = max(
+        audio_formats,
+        key=lambda format_info: format_info.get("abr") or format_info.get("tbr") or 0,
+        default=None,
+    )
+    best_audio_size = _estimated_size(best_audio, duration) if best_audio else None
     candidates = []
     for format_info in info.get("formats", []):
         if format_info.get("vcodec") in {None, "none"}:
             continue
-        if format_info.get("acodec") in {None, "none"}:
+        video_size = _estimated_size(format_info, duration)
+        if video_size is None:
             continue
-        size = _estimated_size(format_info, duration)
+
+        has_audio = format_info.get("acodec") not in {None, "none"}
+        if has_audio:
+            format_expression = str(format_info["format_id"])
+            size = video_size
+        elif best_audio is not None and best_audio_size is not None:
+            format_expression = f"{format_info['format_id']}+{best_audio['format_id']}"
+            size = video_size + best_audio_size
+        else:
+            continue
+
         if size is None or size > MAX_FILE_SIZE:
             continue
         candidates.append((
-            format_info,
+            format_expression,
             size,
             format_info.get("height") or 0,
             format_info.get("tbr") or 0,
@@ -100,8 +124,8 @@ def _select_format(info: dict) -> tuple[str, int, int | None]:
     if not candidates:
         raise RuntimeError("No hay una calidad de vídeo cuyo tamaño se pueda confirmar por debajo de 50 MB.")
 
-    selected, size, _, _ = max(candidates, key=lambda item: (item[2], item[3]))
-    return str(selected["format_id"]), selected.get("height") or 0, size
+    selected_format, size, height, _ = max(candidates, key=lambda item: (item[2], item[3]))
+    return selected_format, height, size
 
 
 def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
