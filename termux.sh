@@ -92,13 +92,19 @@ if (( PYTHON_MAJOR < 3 || (PYTHON_MAJOR == 3 && PYTHON_MINOR < 10) )); then
     exit 1
 fi
 
-if [[ ! -d .venv ]]; then
+if [[ ! -d "$PROJECT_DIR/.venv" ]]; then
     echo "Creando entorno virtual..."
-    python3 -m venv .venv
+    python3 -m venv "$PROJECT_DIR/.venv"
+fi
+
+ACTIVATE_PATH="$PROJECT_DIR/.venv/bin/activate"
+if [[ ! -f "$ACTIVATE_PATH" ]]; then
+    echo "Error: no se encontró el activador del entorno virtual en $ACTIVATE_PATH" >&2
+    exit 1
 fi
 
 # shellcheck disable=SC1091
-source .venv/bin/activate
+source "$ACTIVATE_PATH"
 python -m pip install --upgrade pip
 python -m pip install --upgrade -r requirements.txt
 
