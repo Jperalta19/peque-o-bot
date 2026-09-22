@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
 MAX_FILE_SIZE = 49 * 1024 * 1024
+MAX_VIDEO_HEIGHT = 720
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "120"))
 URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 SUPPORTED_HOSTS = {
@@ -80,7 +81,7 @@ def _size(format_info: dict, duration: float | None) -> int | None:
     return None
 
 
-def select_format(info: dict) -> tuple[str, int, int]:
+def select_format(info: dict, max_height: int | None = MAX_VIDEO_HEIGHT) -> tuple[str, int, int]:
     """Choose the best known video format that Telegram can receive."""
     duration = info.get("duration")
     formats = info.get("formats") or []
@@ -95,6 +96,8 @@ def select_format(info: dict) -> tuple[str, int, int]:
 
     for item in formats:
         if item.get("vcodec") in {None, "none"}:
+            continue
+        if max_height is not None and (item.get("height") or 0) > max_height:
             continue
         video_size = _size(item, duration)
         if video_size is None:

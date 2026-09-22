@@ -30,6 +30,18 @@ class BotValidationTests(unittest.TestCase):
         self.assertEqual(selected, "v+a")
         self.assertEqual(height, 720)
 
+    def test_all_videos_are_capped_at_720p(self):
+        info = {
+            "duration": 30,
+            "formats": [
+                {"format_id": "1080", "vcodec": "avc1", "acodec": "mp4a", "tbr": 4000, "height": 1080, "filesize": 15_000_000},
+                {"format_id": "720", "vcodec": "avc1", "acodec": "mp4a", "tbr": 2500, "height": 720, "filesize": 9_000_000},
+            ],
+        }
+        selected, height, _ = bot.select_format(info)
+        self.assertEqual(selected, "720")
+        self.assertEqual(height, 720)
+
 
 if __name__ == "__main__":
     unittest.main()
