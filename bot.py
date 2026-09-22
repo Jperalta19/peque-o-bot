@@ -132,12 +132,18 @@ def _select_format(info: dict) -> tuple[str, int, int]:
 def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
     output_template = str(Path(output_dir) / "reel.%(ext)s")
     cookies_file = os.getenv("COOKIES_FILE", "").strip()
-    if cookies_file and not Path(cookies_file).is_file():
-        raise FileNotFoundError(f"No existe el archivo de cookies configurado: {cookies_file}")
+    cookie_path = ""
+    if cookies_file:
+        raw_cookie_path = Path(cookies_file)
+        if not raw_cookie_path.is_absolute():
+            raw_cookie_path = Path(__file__).resolve().parent / raw_cookie_path
+        cookie_path = str(raw_cookie_path)
+        if not raw_cookie_path.is_file():
+            raise FileNotFoundError(f"No existe el archivo de cookies configurado: {cookie_path}")
 
     analyze_options = {"quiet": True, "no_warnings": True}
-    if cookies_file:
-        analyze_options["cookiefile"] = cookies_file
+    if cookie_path:
+        analyze_options["cookiefile"] = cookie_path
 
     with yt_dlp.YoutubeDL(analyze_options) as analyzer:
         info = analyzer.extract_info(url, download=False)
@@ -154,8 +160,8 @@ def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
         "retries": 2,
         "socket_timeout": DOWNLOAD_TIMEOUT,
     }
-    if cookies_file:
-        options["cookiefile"] = cookies_file
+    if cookie_path:
+        options["cookiefile"] = cookie_path
 
     with yt_dlp.YoutubeDL(options) as downloader:
         downloaded_info = downloader.extract_info(url, download=True)
