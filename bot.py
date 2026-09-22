@@ -1,14 +1,15 @@
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
 import urllib.error
 import urllib.request
-import json
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -83,6 +84,7 @@ def _estimated_size(format_info: dict, duration: float | None) -> int | None:
 def _select_format(info: dict) -> tuple[str, int, int]:
     duration = info.get("duration")
     formats = info.get("formats", [])
+    ffmpeg_available = shutil.which("ffmpeg") is not None
     audio_formats = [
         format_info
         for format_info in formats
@@ -96,7 +98,7 @@ def _select_format(info: dict) -> tuple[str, int, int]:
     )
     best_audio_size = _estimated_size(best_audio, duration) if best_audio else None
     candidates = []
-    for format_info in info.get("formats", []):
+    for format_info in formats:
         if format_info.get("vcodec") in {None, "none"}:
             continue
         video_size = _estimated_size(format_info, duration)
@@ -107,9 +109,12 @@ def _select_format(info: dict) -> tuple[str, int, int]:
         if has_audio:
             format_expression = str(format_info["format_id"])
             size = video_size
-        elif best_audio is not None and best_audio_size is not None:
+        elif ffmpeg_available and best_audio is not None and best_audio_size is not None:
             format_expression = f"{format_info['format_id']}+{best_audio['format_id']}"
             size = video_size + best_audio_size
+        elif not ffmpeg_available:
+            format_expression = str(format_info["format_id"])
+            size = video_size
         else:
             continue
 
@@ -152,7 +157,6 @@ def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
     options = {
         "outtmpl": output_template,
         "format": format_id,
-        "merge_output_format": "mp4",
         "noplaylist": True,
         "max_filesize": MAX_FILE_SIZE,
         "quiet": True,
@@ -160,6 +164,8 @@ def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
         "retries": 2,
         "socket_timeout": DOWNLOAD_TIMEOUT,
     }
+    if shutil.which("ffmpeg") is not None:
+        options["merge_output_format"] = "mp4"
     if cookie_path:
         options["cookiefile"] = cookie_path
 
@@ -194,6 +200,8 @@ def explain_download_error(error: Exception) -> str:
         return "No hay un formato compatible disponible para ese reel."
     if any(term in error_text for term in ("too large", "filesize", "50 mb")):
         return "El vídeo supera el límite de 50 MB de Telegram."
+    if "ffmpeg is not installed" in error_text or "merge of multiple formats" in error_text:
+        return "Falta ffmpeg para mezclar audio y video. Instálalo con apt install ffmpeg o configura una versión del downloader que no requiera fusión."
     if "tamaño se pueda confirmar" in error_text:
         return "No encontré una calidad cuyo tamaño pueda confirmarse por debajo de 50 MB."
     return "No se pudo obtener el vídeo. Comprueba que el enlace sea público y válido."

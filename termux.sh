@@ -66,6 +66,12 @@ if ! command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "Instalando ffmpeg dentro de Ubuntu..."
+    apt update
+    apt install -y ffmpeg
+fi
+
 if ! python3 -m venv --help >/dev/null 2>&1; then
     echo "Error: falta python3-venv dentro de Ubuntu." >&2
     if command -v apt >/dev/null 2>&1; then

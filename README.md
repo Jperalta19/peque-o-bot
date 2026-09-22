@@ -7,6 +7,7 @@ Cada vídeo se envía con el nombre o identificador de la cuenta detectada y el 
 ## Requisitos
 
 - Python 3.10 o superior.
+- `ffmpeg` instalado en Ubuntu/servidor para mezclar audio y vídeo cuando el formato lo requiera.
 - Un token de bot creado con [@BotFather](https://t.me/BotFather).
 - Acceso a internet.
 - En Termux: `proot-distro` con Ubuntu instalado.
