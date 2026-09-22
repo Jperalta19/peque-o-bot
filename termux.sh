@@ -99,11 +99,15 @@ if [[ ! -f .env ]]; then
         '# Token generado por @BotFather en Telegram' \
         'TELEGRAM_TOKEN=pon_aqui_el_token_del_bot' \
         '' \
-        '# Opcional: ruta a cookies.txt si alguna plataforma exige sesión' \
-        '# COOKIES_FILE=/ruta/absoluta/a/cookies.txt' \
+        '# Ruta del archivo de cookies del proyecto para plataformas que requieren sesión' \
+        "COOKIES_FILE=/home/jperaltar/Desktop/soc/peque-o-bot/cookies.txt" \
         '' \
         'DOWNLOAD_TIMEOUT_SECONDS=120' > .env
     echo "Se creó .env; introduce el token de Telegram cuando se solicite."
+fi
+
+if ! grep -q '^COOKIES_FILE=' .env; then
+    printf '\nCOOKIES_FILE=/home/jperaltar/Desktop/soc/peque-o-bot/cookies.txt\n' >> .env
 fi
 
 if grep -q '^TELEGRAM_TOKEN=pon_aqui_el_token_del_bot$' .env; then
