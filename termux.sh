@@ -99,18 +99,11 @@ if [[ ! -f .env ]]; then
         '# Token generado por @BotFather en Telegram' \
         'TELEGRAM_TOKEN=pon_aqui_el_token_del_bot' \
         '' \
-        '# ID del chat donde se enviará "bot ready" al iniciar (ej.: -1001234567890)' \
-        'READY_CHAT_ID=' \
-        '' \
-        '# Ruta del archivo de cookies del proyecto dentro de Ubuntu/proot.' \
-        'COOKIES_FILE=cookies.txt' \
+        '# Opcional: ruta a cookies.txt si alguna plataforma exige sesión' \
+        '# COOKIES_FILE=/ruta/absoluta/a/cookies.txt' \
         '' \
         'DOWNLOAD_TIMEOUT_SECONDS=120' > .env
     echo "Se creó .env; introduce el token de Telegram cuando se solicite."
-fi
-
-if ! grep -q '^COOKIES_FILE=' .env; then
-    printf '\nCOOKIES_FILE=cookies.txt\n' >> .env
 fi
 
 if grep -q '^TELEGRAM_TOKEN=pon_aqui_el_token_del_bot$' .env; then
