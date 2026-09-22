@@ -1,6 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -Eeuo pipefail
 
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$PROJECT_DIR"
+
 if [[ "${BOT_IN_UBUNTU:-}" != "1" ]] && ! ([[ -f /etc/os-release ]] && grep -qi '^ID=ubuntu' /etc/os-release); then
     if ! command -v proot-distro >/dev/null 2>&1; then
         echo "Error: este script debe ejecutarse desde Termux, no dentro de Ubuntu." >&2
@@ -17,7 +20,6 @@ if [[ "${BOT_IN_UBUNTU:-}" != "1" ]] && ! ([[ -f /etc/os-release ]] && grep -qi 
         echo "Instálalo con: pkg install termux-tools" >&2
     fi
 
-    PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     TERMUX_HOME="${HOME:?No se pudo determinar el HOME de Termux}"
 
     case "$PROJECT_DIR" in
