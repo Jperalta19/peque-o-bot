@@ -14,8 +14,25 @@ python -m pip install --upgrade -r requirements.txt
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  printf 'Edita .env y configura TELEGRAM_TOKEN antes de iniciar.\n'
-  exit 1
+fi
+
+telegram_token="$(awk -F= '$1 == "TELEGRAM_TOKEN" { print substr($0, index($0, "=") + 1); exit }' .env)"
+telegram_token="${telegram_token//[[:space:]]/}"
+
+while [[ -z "$telegram_token" || "$telegram_token" == "pon_aqui_el_token" || ! "$telegram_token" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; do
+  if [[ -n "$telegram_token" ]]; then
+    printf 'El TELEGRAM_TOKEN no tiene un formato válido.\n' >&2
+  fi
+  printf 'Introduce el token de Telegram (la entrada no se mostrará): '
+  read -r -s telegram_token
+  printf '\n'
+  telegram_token="${telegram_token//[[:space:]]/}"
+done
+
+if grep -q '^TELEGRAM_TOKEN=' .env; then
+  sed -i "s/^TELEGRAM_TOKEN=.*/TELEGRAM_TOKEN=$telegram_token/" .env
+else
+  printf '\nTELEGRAM_TOKEN=%s\n' "$telegram_token" >> .env
 fi
 
 network_is_available() {
