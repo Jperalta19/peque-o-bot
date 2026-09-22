@@ -42,6 +42,19 @@ class BotValidationTests(unittest.TestCase):
         self.assertEqual(selected, "720")
         self.assertEqual(height, 720)
 
+    def test_rejects_formats_above_safe_download_limit(self):
+        info = {
+            "duration": 30,
+            "formats": [
+                {"format_id": "large", "vcodec": "avc1", "acodec": "mp4a", "height": 720, "filesize": 46 * 1024 * 1024},
+                {"format_id": "small", "vcodec": "avc1", "acodec": "mp4a", "height": 480, "filesize": 20 * 1024 * 1024},
+            ],
+        }
+        selected, height, size = bot.select_format(info)
+        self.assertEqual(selected, "small")
+        self.assertEqual(height, 480)
+        self.assertLess(size, 49 * 1024 * 1024)
+
 
 if __name__ == "__main__":
     unittest.main()

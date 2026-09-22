@@ -6,7 +6,7 @@ Bot en Python para recibir enlaces y devolver vídeos de:
 - Facebook: reels y vídeos públicos.
 - X/Twitter: vídeos incluidos en publicaciones.
 
-Todos los vídeos se descargan como máximo a 720p para reducir el tamaño del archivo y acelerar el envío.
+Todos los vídeos se descargan como máximo a 720p para reducir el tamaño del archivo y acelerar el envío. El selector usa un límite seguro de 45 MiB para que el archivo final quede por debajo de 49 MB incluso cuando el tamaño estimado varía al unir audio y vídeo.
 
 Usa `yt-dlp` y limita cada archivo a 49 MB para poder enviarlo por Telegram.
 

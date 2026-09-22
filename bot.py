@@ -26,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
-MAX_FILE_SIZE = 49 * 1024 * 1024
+MAX_FILE_SIZE = 45 * 1024 * 1024
 MAX_VIDEO_HEIGHT = 720
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "120"))
 URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
@@ -113,7 +113,7 @@ def select_format(info: dict, max_height: int | None = MAX_VIDEO_HEIGHT) -> tupl
             candidates.append((expression, total_size, item.get("height") or 0, item.get("tbr") or 0))
 
     if not candidates:
-        raise RuntimeError("No hay un formato conocido que quepa en el límite de Telegram (49 MB).")
+        raise RuntimeError("No hay un formato conocido que quepa por debajo de 45 MB.")
     selected = max(candidates, key=lambda item: (item[2], item[3]))
     return selected[0], selected[2], selected[1]
 
@@ -157,7 +157,7 @@ def download_media(url: str, output_dir: str) -> tuple[Path, str, int, int]:
     file_path = files[0]
     if file_path.stat().st_size > MAX_FILE_SIZE:
         file_path.unlink(missing_ok=True)
-        raise RuntimeError("El archivo supera el límite de 49 MB de Telegram.")
+        raise RuntimeError("El archivo supera el límite seguro de 45 MB de Telegram.")
     account = downloaded.get("uploader_id") or downloaded.get("uploader") or downloaded.get("channel") or "cuenta desconocida"
     return file_path, str(account), height, estimated_size or file_path.stat().st_size
 
