@@ -99,6 +99,9 @@ if [[ ! -f .env ]]; then
         '# Token generado por @BotFather en Telegram' \
         'TELEGRAM_TOKEN=pon_aqui_el_token_del_bot' \
         '' \
+        '# ID del chat donde se enviará "bot ready" al iniciar (ej.: -1001234567890)' \
+        'READY_CHAT_ID=' \
+        '' \
         '# Ruta del archivo de cookies del proyecto para plataformas que requieren sesión' \
         "COOKIES_FILE=/home/jperaltar/Desktop/soc/peque-o-bot/cookies.txt" \
         '' \

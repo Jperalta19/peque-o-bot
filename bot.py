@@ -35,6 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
+READY_CHAT_ID = os.getenv("READY_CHAT_ID", "").strip()
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "120"))
 MAX_FILE_SIZE = 50 * 1024 * 1024
 SUPPORTED_HOSTS = {
@@ -285,6 +286,15 @@ async def configure_commands(application: Application) -> None:
     )
 
 
+async def notify_ready(application: Application) -> None:
+    if not READY_CHAT_ID:
+        return
+    try:
+        await application.bot.send_message(chat_id=READY_CHAT_ID, text="bot ready")
+    except TelegramError:
+        logger.warning("No se pudo enviar el mensaje de arranque a %s", READY_CHAT_ID, exc_info=True)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     if not update.message or not update.message.text:
@@ -355,12 +365,16 @@ def main() -> None:
         pool_timeout=30,
         httpx_kwargs={"trust_env": False},
     )
+    async def post_init(application: Application) -> None:
+        await configure_commands(application)
+        await notify_ready(application)
+
     application = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
         .request(telegram_request)
         .get_updates_request(polling_request)
-        .post_init(configure_commands)
+        .post_init(post_init)
         .build()
     )
     application.add_handler(CommandHandler("start", start))
