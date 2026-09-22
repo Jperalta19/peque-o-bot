@@ -1,405 +1,232 @@
+"""Telegram bot for downloading public media from Instagram, Facebook and X."""
+
+from __future__ import annotations
+
 import asyncio
-import contextlib
-import json
 import logging
 import os
 import re
 import shutil
-import subprocess
 import tempfile
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
 from dotenv import load_dotenv
-from telegram import BotCommand, Update
+from telegram import Update
 from telegram.constants import ChatAction
-from telegram.error import TelegramError
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
-from telegram.request import HTTPXRequest
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 load_dotenv()
 
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
-READY_CHAT_ID = os.getenv("READY_CHAT_ID", "").strip()
+MAX_FILE_SIZE = 49 * 1024 * 1024
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "120"))
-MAX_FILE_SIZE = 50 * 1024 * 1024
+URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 SUPPORTED_HOSTS = {
     "instagram.com",
     "www.instagram.com",
     "facebook.com",
     "www.facebook.com",
     "fb.watch",
-    "tiktok.com",
-    "www.tiktok.com",
-    "vm.tiktok.com",
-    "vt.tiktok.com",
+    "m.facebook.com",
     "x.com",
     "www.x.com",
     "twitter.com",
     "www.twitter.com",
     "mobile.twitter.com",
 }
-URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 
 
 def is_supported_url(url: str) -> bool:
     parsed = urlparse(url)
-    return parsed.scheme in {"http", "https"} and parsed.netloc.lower().rstrip(".") in SUPPORTED_HOSTS
+    return parsed.scheme in {"http", "https"} and parsed.hostname in SUPPORTED_HOSTS
 
 
 def extract_supported_url(text: str) -> str | None:
     for candidate in URL_PATTERN.findall(text):
-        clean_url = candidate.rstrip(".,!?)]}")
-        if is_supported_url(clean_url):
-            return clean_url
+        candidate = candidate.rstrip(".,!?)]}>")
+        if is_supported_url(candidate):
+            return candidate
     return None
 
 
-def _estimated_size(format_info: dict, duration: float | None) -> int | None:
-    size = format_info.get("filesize") or format_info.get("filesize_approx")
-    if size:
-        return int(size)
+def media_kind(url: str) -> str:
+    path = urlparse(url).path.lower()
+    if "story" in path:
+        return "historia"
+    if "reel" in path or "/reels" in path:
+        return "reel"
+    if "facebook.com" in url and ("watch" in path or "/videos" in path):
+        return "video de Facebook"
+    if "x.com" in url or "twitter.com" in url:
+        return "video de X"
+    return "publicación"
+
+
+def _size(format_info: dict, duration: float | None) -> int | None:
+    value = format_info.get("filesize") or format_info.get("filesize_approx")
+    if value:
+        return int(value)
     bitrate = format_info.get("tbr")
     if bitrate and duration:
-        return int(float(bitrate) * 1000 * duration / 8 * 1.1)
+        return int(float(bitrate) * 1000 * duration / 8 * 1.15)
     return None
 
 
-def _select_format(info: dict) -> tuple[str, int, int]:
+def select_format(info: dict) -> tuple[str, int, int]:
+    """Choose the best known video format that Telegram can receive."""
     duration = info.get("duration")
-    formats = info.get("formats", [])
-    ffmpeg_available = shutil.which("ffmpeg") is not None
-    audio_formats = [
-        format_info
-        for format_info in formats
-        if format_info.get("acodec") not in {None, "none"}
-        and format_info.get("vcodec") in {None, "none"}
+    formats = info.get("formats") or []
+    has_ffmpeg = shutil.which("ffmpeg") is not None
+    audio_only = [
+        item for item in formats
+        if item.get("vcodec") in {None, "none"} and item.get("acodec") not in {None, "none"}
     ]
-    best_audio = max(
-        audio_formats,
-        key=lambda format_info: format_info.get("abr") or format_info.get("tbr") or 0,
-        default=None,
-    )
-    best_audio_size = _estimated_size(best_audio, duration) if best_audio else None
-    candidates = []
-    for format_info in formats:
-        if format_info.get("vcodec") in {None, "none"}:
+    best_audio = max(audio_only, key=lambda item: item.get("abr") or item.get("tbr") or 0, default=None)
+    audio_size = _size(best_audio, duration) if best_audio else None
+    candidates: list[tuple[str, int, int, float]] = []
+
+    for item in formats:
+        if item.get("vcodec") in {None, "none"}:
             continue
-        video_size = _estimated_size(format_info, duration)
+        video_size = _size(item, duration)
         if video_size is None:
             continue
-
-        has_audio = format_info.get("acodec") not in {None, "none"}
-        if has_audio:
-            format_expression = str(format_info["format_id"])
-            size = video_size
-        elif ffmpeg_available and best_audio is not None and best_audio_size is not None:
-            format_expression = f"{format_info['format_id']}+{best_audio['format_id']}"
-            size = video_size + best_audio_size
-        elif not ffmpeg_available:
-            format_expression = str(format_info["format_id"])
-            size = video_size
+        if item.get("acodec") not in {None, "none"}:
+            expression, total_size = str(item["format_id"]), video_size
+        elif has_ffmpeg and best_audio and audio_size is not None:
+            expression = f"{item['format_id']}+{best_audio['format_id']}"
+            total_size = video_size + audio_size
         else:
-            continue
-
-        if size is None or size > MAX_FILE_SIZE:
-            continue
-        candidates.append((
-            format_expression,
-            size,
-            format_info.get("height") or 0,
-            format_info.get("tbr") or 0,
-        ))
+            expression, total_size = str(item["format_id"]), video_size
+        if total_size <= MAX_FILE_SIZE:
+            candidates.append((expression, total_size, item.get("height") or 0, item.get("tbr") or 0))
 
     if not candidates:
-        raise RuntimeError("No hay una calidad de vídeo cuyo tamaño se pueda confirmar por debajo de 50 MB.")
+        raise RuntimeError("No hay un formato conocido que quepa en el límite de Telegram (49 MB).")
+    selected = max(candidates, key=lambda item: (item[2], item[3]))
+    return selected[0], selected[2], selected[1]
 
-    selected_format, size, height, _ = max(candidates, key=lambda item: (item[2], item[3]))
-    return selected_format, height, size
+
+def _cookie_options() -> dict:
+    configured = os.getenv("COOKIES_FILE", "").strip()
+    if not configured:
+        return {}
+    cookie_path = Path(configured).expanduser()
+    if not cookie_path.is_absolute():
+        cookie_path = Path(__file__).resolve().parent / cookie_path
+    if not cookie_path.is_file():
+        raise FileNotFoundError(f"No existe COOKIES_FILE: {cookie_path}")
+    return {"cookiefile": str(cookie_path)}
 
 
-def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
-    output_template = str(Path(output_dir) / "reel.%(ext)s")
-    cookies_file = os.getenv("COOKIES_FILE", "").strip()
-    cookie_path = ""
-    if cookies_file:
-        raw_cookie_path = Path(cookies_file)
-        if not raw_cookie_path.is_absolute():
-            raw_cookie_path = Path(__file__).resolve().parent / raw_cookie_path
-        cookie_path = str(raw_cookie_path)
-        if not raw_cookie_path.is_file():
-            raise FileNotFoundError(f"No existe el archivo de cookies configurado: {cookie_path}")
-
-    analyze_options = {"quiet": True, "no_warnings": True}
-    if cookie_path:
-        analyze_options["cookiefile"] = cookie_path
-
-    with yt_dlp.YoutubeDL(analyze_options) as analyzer:
+def download_media(url: str, output_dir: str) -> tuple[Path, str, int, int]:
+    output_template = str(Path(output_dir) / "media.%(ext)s")
+    common = {"quiet": True, "no_warnings": True, "noplaylist": True, **_cookie_options()}
+    with yt_dlp.YoutubeDL(common) as analyzer:
         info = analyzer.extract_info(url, download=False)
-        format_id, height, estimated_size = _select_format(info)
+        format_expression, height, estimated_size = select_format(info)
 
     options = {
+        **common,
         "outtmpl": output_template,
-        "format": format_id,
-        "noplaylist": True,
+        "format": format_expression,
         "max_filesize": MAX_FILE_SIZE,
-        "quiet": True,
-        "no_warnings": True,
         "retries": 2,
         "socket_timeout": DOWNLOAD_TIMEOUT,
+        "restrictfilenames": True,
     }
-    if shutil.which("ffmpeg") is not None:
+    if shutil.which("ffmpeg"):
         options["merge_output_format"] = "mp4"
-    if cookie_path:
-        options["cookiefile"] = cookie_path
-
     with yt_dlp.YoutubeDL(options) as downloader:
-        downloaded_info = downloader.extract_info(url, download=True)
+        downloaded = downloader.extract_info(url, download=True)
 
-    downloaded_files = [path for path in Path(output_dir).glob("reel.*") if path.is_file()]
-    if not downloaded_files:
-        raise RuntimeError("No se encontró un archivo descargado.")
-
-    file_path = downloaded_files[0]
+    files = [path for path in Path(output_dir).glob("media.*") if path.is_file()]
+    if not files:
+        raise RuntimeError("La plataforma no devolvió ningún archivo multimedia.")
+    file_path = files[0]
     if file_path.stat().st_size > MAX_FILE_SIZE:
         file_path.unlink(missing_ok=True)
-        raise RuntimeError("El vídeo supera el límite de 50 MB de Telegram.")
-    account_name = (
-        downloaded_info.get("uploader_id")
-        or downloaded_info.get("uploader")
-        or downloaded_info.get("channel")
-        or "Cuenta no identificada"
-    )
-    return file_path, str(account_name), height, estimated_size or file_path.stat().st_size
+        raise RuntimeError("El archivo supera el límite de 49 MB de Telegram.")
+    account = downloaded.get("uploader_id") or downloaded.get("uploader") or downloaded.get("channel") or "cuenta desconocida"
+    return file_path, str(account), height, estimated_size or file_path.stat().st_size
 
 
-def explain_download_error(error: Exception) -> str:
-    error_text = str(error).lower()
-    if any(term in error_text for term in ("sign in", "login", "cookies", "authentication", "private")):
-        return (
-            "La plataforma requiere iniciar sesión o el contenido no es público. "
-            "Configura COOKIES_FILE con cookies.txt de tu navegador."
-        )
-    if any(term in error_text for term in ("requested format", "format is not available")):
-        return "No hay un formato compatible disponible para ese reel."
-    if any(term in error_text for term in ("too large", "filesize", "50 mb")):
-        return "El vídeo supera el límite de 50 MB de Telegram."
-    if "ffmpeg is not installed" in error_text or "merge of multiple formats" in error_text:
-        return "Falta ffmpeg para mezclar audio y video. Instálalo con apt install ffmpeg o configura una versión del downloader que no requiera fusión."
-    if "tamaño se pueda confirmar" in error_text:
-        return "No encontré una calidad cuyo tamaño pueda confirmarse por debajo de 50 MB."
-    return "No se pudo obtener el vídeo. Comprueba que el enlace sea público y válido."
+def friendly_error(error: Exception) -> str:
+    text = str(error).lower()
+    if any(word in text for word in ("login", "sign in", "authentication", "private", "cookies")):
+        return "Ese contenido requiere iniciar sesión o es privado. Configura COOKIES_FILE con un cookies.txt local."
+    if "49 mb" in text or "filesize" in text or "too large" in text:
+        return "El vídeo supera el límite de 49 MB de Telegram."
+    if "ffmpeg" in text or "merge" in text:
+        return "Falta ffmpeg para unir vídeo y audio. Instálalo con `apt install ffmpeg`."
+    return "No se pudo descargar. Comprueba que el enlace siga siendo público y válido."
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     await update.message.reply_text(
-        "Envíame el enlace público de Instagram, Facebook, TikTok o X y lo descargaré.\n\n"
-        "Usa /info para conocer el bot o /status para comprobar el servicio.\n"
-        "Descarga únicamente contenido que tengas derecho a guardar."
+        "Envíame un enlace público de Instagram, Facebook o X.\n\n"
+        "Admito reels, publicaciones, vídeos y, cuando la plataforma lo permita, historias.\n"
+        "Usa /info para ver detalles. Descarga solo contenido que tengas derecho a conservar."
     )
 
 
-async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     await update.message.reply_text(
-        "Bot descargador de vídeos públicos de Instagram, Facebook, TikTok y X.\n\n"
-        "Envíame un enlace compatible y recibirás el vídeo con la cuenta detectada y el enlace "
-        "de la publicación. El límite de envío es de 50 MB.\n\n"
-        "Comandos disponibles:\n"
-        "/start - Iniciar el bot\n"
-        "/info - Ver este resumen\n"
-        "/status - Consultar el estado del servicio"
+        "Descargador multimedia\n\n"
+        "Instagram: reels, publicaciones y URLs de historias públicas.\n"
+        "Facebook: reels y vídeos públicos.\n"
+        "X: vídeos incluidos en publicaciones.\n\n"
+        "Límite: 49 MB por archivo. Algunas URLs requieren COOKIES_FILE."
     )
-
-
-def read_battery_status() -> str:
-    battery_command = "/data/data/com.termux/files/usr/bin/termux-battery-status"
-    try:
-        result = subprocess.run(
-            [battery_command],
-            capture_output=True,
-            text=True,
-            timeout=8,
-            check=True,
-        )
-        battery = json.loads(result.stdout)
-        percentage = battery.get("percentage")
-        status = battery.get("status") or "desconocido"
-        if percentage is None:
-            return "No disponible"
-        return f"{percentage}% ({status})"
-    except (FileNotFoundError, json.JSONDecodeError, subprocess.SubprocessError, OSError):
-        return "No disponible (instala Termux:API y ejecuta termux-battery-status en Termux)"
-
-
-def check_internet() -> str:
-    started_at = time.monotonic()
-    try:
-        request = urllib.request.Request("https://api.telegram.org", method="HEAD")
-        with urllib.request.urlopen(request, timeout=8):
-            elapsed = (time.monotonic() - started_at) * 1000
-        return f"Conectada ({elapsed:.0f} ms)"
-    except (OSError, urllib.error.URLError):
-        return "Sin conexión"
-
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    del context
-    status_message = await update.message.reply_text("Escribiendo el estado del bot...")
-
-    async def keep_typing() -> None:
-        while True:
-            try:
-                await update.message.chat.send_action(ChatAction.TYPING)
-            except TelegramError:
-                logger.debug("No se pudo actualizar la animación de escritura", exc_info=True)
-            await asyncio.sleep(4)
-
-    typing_task = asyncio.create_task(keep_typing())
-    try:
-        battery, internet = await asyncio.gather(
-            asyncio.to_thread(read_battery_status),
-            asyncio.to_thread(check_internet),
-        )
-        await status_message.edit_text(
-            "Estado del servicio\n\n"
-            "Bot: Activo y respondiendo\n"
-            f"Conexión a internet: {internet}\n"
-            f"Batería de la tablet: {battery}"
-        )
-    finally:
-        typing_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await typing_task
-
-
-async def configure_commands(application: Application) -> None:
-    await application.bot.set_my_commands(
-        [
-            BotCommand("start", "Iniciar el bot"),
-            BotCommand("info", "Resumen y descripción del bot"),
-            BotCommand("status", "Estado, batería y conexión"),
-        ]
-    )
-
-
-async def notify_ready(application: Application) -> None:
-    if not READY_CHAT_ID:
-        return
-    try:
-        await application.bot.send_message(chat_id=READY_CHAT_ID, text="bot ready")
-    except TelegramError:
-        logger.warning("No se pudo enviar el mensaje de arranque a %s", READY_CHAT_ID, exc_info=True)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     del context
     if not update.message or not update.message.text:
         return
-
     url = extract_supported_url(update.message.text)
     if not url:
-        await update.message.reply_text(
-            "No detecté un enlace compatible. Envíame una URL pública de Instagram, Facebook, TikTok o X."
-        )
+        await update.message.reply_text("No detecté una URL compatible de Instagram, Facebook o X.")
         return
 
-    status_message = await update.message.reply_text("Analizando tamaños y calidades disponibles...")
-    await update.message.chat.send_action(ChatAction.UPLOAD_VIDEO)
-
+    kind = media_kind(url)
+    status = await update.message.reply_text(f"Descargando {kind}... Esto puede tardar un momento.")
     try:
-        with tempfile.TemporaryDirectory(prefix="telegram-reel-") as temp_dir:
-            file_path, account_name, height, estimated_size = await asyncio.to_thread(download_reel, url, temp_dir)
-            with file_path.open("rb") as video:
+        with tempfile.TemporaryDirectory(prefix="telegram-media-") as temp_dir:
+            path, account, height, estimated = await asyncio.to_thread(download_media, url, temp_dir)
+            with path.open("rb") as media:
                 await update.message.reply_video(
-                    video=video,
-                    caption=(
-                        f"Publicación: {url}\n"
-                        f"Cuenta: {account_name}\n"
-                        f"Calidad: {height}p ({estimated_size / (1024 * 1024):.1f} MB estimados)"
-                    ),
+                    video=media,
+                    caption=f"{kind.title()} de {account}\nCalidad: {height}p\n{url}",
                     supports_streaming=True,
                 )
-        await status_message.delete()
-    except (RuntimeError, yt_dlp.utils.DownloadError) as error:
-        logger.warning("yt-dlp no pudo descargar %s: %s", url, error, exc_info=True)
-        await status_message.edit_text(
-            f"{explain_download_error(error)}\n\n"
-            "Instagram, Facebook y TikTok pueden exigir cookies incluso para publicaciones "
-            "visibles desde un navegador."
-        )
-    except TelegramError:
-        logger.exception("Telegram no pudo recibir el vídeo de %s", url)
-        await status_message.edit_text(
-            "La descarga terminó, pero Telegram no pudo recibir el vídeo. "
-            "Comprueba el tamaño del archivo y vuelve a intentarlo."
-        )
+        await status.delete()
+    except (RuntimeError, FileNotFoundError, yt_dlp.utils.DownloadError) as error:
+        logger.warning("No se pudo descargar %s: %s", url, error)
+        await status.edit_text(friendly_error(error))
     except Exception:
-        logger.exception("Error inesperado procesando %s", url)
-        await status_message.edit_text("Ocurrió un error inesperado. Revisa la consola del bot.")
+        logger.exception("Error procesando %s", url)
+        await status.edit_text("Ocurrió un error inesperado. Revisa los logs del bot.")
 
 
 def main() -> None:
     if not TELEGRAM_TOKEN:
-        raise RuntimeError("Falta TELEGRAM_TOKEN. Cópialo en un archivo .env.")
-
-    for proxy_variable in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-        os.environ.pop(proxy_variable, None)
-
-    telegram_request = HTTPXRequest(
-        connection_pool_size=8,
-        connect_timeout=30,
-        read_timeout=60,
-        write_timeout=60,
-        pool_timeout=30,
-        httpx_kwargs={"trust_env": False},
-    )
-    polling_request = HTTPXRequest(
-        connection_pool_size=2,
-        connect_timeout=30,
-        read_timeout=60,
-        write_timeout=60,
-        pool_timeout=30,
-        httpx_kwargs={"trust_env": False},
-    )
-    async def post_init(application: Application) -> None:
-        await configure_commands(application)
-        await notify_ready(application)
-
-    application = (
-        Application.builder()
-        .token(TELEGRAM_TOKEN)
-        .request(telegram_request)
-        .get_updates_request(polling_request)
-        .post_init(post_init)
-        .build()
-    )
+        raise RuntimeError("Falta TELEGRAM_TOKEN. Configúralo en .env.")
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("info", info_command))
-    application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("info", info))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        bootstrap_retries=-1,
-        timeout=30,
-    )
+    application.run_polling(allowed_updates=Update.ALL_TYPES, bootstrap_retries=-1)
 
 
 if __name__ == "__main__":

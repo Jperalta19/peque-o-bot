@@ -1,6 +1,6 @@
+.env
 .venv/
 __pycache__/
 *.py[cod]
-.env
-*.part
-*.ytdl
+*.log
+cookies*.txt

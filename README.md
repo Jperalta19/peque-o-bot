@@ -1,70 +1,39 @@
-# Bot de Telegram para reels
+# Bot descargador de Telegram
 
-Bot pequeño en Python que recibe enlaces públicos de reels de Instagram, Facebook, TikTok y vídeos de X/Twitter, y devuelve el vídeo en Telegram.
+Bot en Python para recibir enlaces y devolver vídeos de:
 
-Cada vídeo se envía con el nombre o identificador de la cuenta detectada y el enlace original de la publicación en el caption.
+- Instagram: reels, publicaciones y, si la URL es pública, historias.
+- Facebook: reels y vídeos públicos.
+- X/Twitter: vídeos incluidos en publicaciones.
 
-## Requisitos
+Usa `yt-dlp` y limita cada archivo a 49 MB para poder enviarlo por Telegram.
 
-- Python 3.10 o superior.
-- `ffmpeg` instalado en Ubuntu/servidor para mezclar audio y vídeo cuando el formato lo requiera.
-- Un token de bot creado con [@BotFather](https://t.me/BotFather).
-- Acceso a internet.
-- En Termux: `proot-distro` con Ubuntu instalado.
-
-## Vercel
-
-El entrypoint de Vercel está declarado explícitamente en `pyproject.toml` como `bot.py`.
-Este proyecto usa polling continuo de Telegram, por lo que Vercel Functions no es un entorno
-adecuado para ejecutarlo de forma persistente. Para mantener el bot activo, ejecútalo en Termux
-con `termux.sh` o en un servicio con un proceso persistente.
-
-## Termux + Ubuntu
-
-Coloca esta carpeta dentro del directorio HOME de Termux. En Termux instala Ubuntu y las herramientas necesarias:
+## Instalación en Linux
 
 ```bash
-pkg update
-pkg install proot-distro termux-tools termux-api
-proot-distro install ubuntu
+sudo apt install ffmpeg
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
 ```
 
-Arranca el bot desde Termux con:
+Edita `.env` y pon el token creado por `@BotFather`. Después:
 
 ```bash
-cd "$HOME/pequeño bot"
-chmod +x termux.sh
-./termux.sh
+python bot.py
 ```
 
-El script puede ejecutarse directamente desde la sesión Ubuntu de `proot-distro`, donde el prompt aparece como `root@localhost`. También puede lanzarse desde Termux; en ese caso entra en Ubuntu automáticamente. El bot siempre termina ejecutándose dentro de Ubuntu.
+En Telegram envía `/start` y luego una URL compatible.
 
-Para actualizar el código desde GitHub sin borrar la carpeta ni volver a clonarla:
+## Termux
 
-```bash
-chmod +x up.sh
-./up.sh
-```
+Instala Python y ffmpeg con `pkg install python ffmpeg`, crea el entorno virtual e instala `requirements.txt` igual que en Linux. El script `termux.sh` automatiza esos pasos y arranca el bot. Si se corta la conexión o el polling termina, espera a que `api.telegram.org` vuelva a responder y reinicia el bot automáticamente. Para detenerlo, usa `Ctrl+C`.
 
-`up.sh` actualiza la rama actual con `git pull --rebase --autostash` y después inicia el bot mediante `termux.sh`. Si tienes cambios locales en archivos controlados por Git, los conserva y los reaplica automáticamente. Puede ejecutarse desde Termux o desde la shell `root@localhost` de Ubuntu.
+## Cookies opcionales
 
-El script entra en Ubuntu con `proot-distro login --termux-home`, se relanza dentro de la distro y allí instala Python, crea el entorno virtual, configura `.env` y ejecuta el bot. También activa `termux-wake-lock` para que Android no suspenda el proceso al apagar la pantalla. La primera ejecución puede tardar mientras Ubuntu instala Python y las dependencias.
+Instagram, Facebook o X pueden exigir sesión aunque una publicación parezca visible. Exporta un archivo Netscape `cookies.txt` localmente y configura `COOKIES_FILE`; no lo subas al repositorio.
 
-Para evitar que Android cierre Termux por ahorro de batería, desactiva la optimización de batería para Termux en los ajustes del sistema. `termux-wake-lock` ayuda a mantener el proceso activo, pero no puede impedir que Android fuerce el cierre de la aplicación.
+## Limitaciones
 
-La primera vez solicita el token de Telegram sin mostrarlo. Las siguientes veces reutiliza la configuración existente y actualiza `yt-dlp`, que debe mantenerse al día porque Instagram y Facebook cambian con frecuencia. El menú de Telegram se configura automáticamente con solo `/start`, `/info` y `/status`. Si Python se cierra por un error, el script lo vuelve a iniciar automáticamente. El bot también reintenta indefinidamente la conexión con Telegram cuando la red se corta. Después abre tu bot en Telegram, pulsa `/start` y envíale un enlace.
-
-## Notas
-
-- Solo se aceptan dominios de Instagram, Facebook, TikTok y X/Twitter, y se procesa un enlace por mensaje.
-- Antes de descargar, se analizan las calidades disponibles y se elige la de mayor resolución cuyo tamaño estimado sea inferior a 50 MB.
-- `/status` obtiene la batería mediante `termux-battery-status`; instala también la aplicación Termux:API en Android y concede los permisos necesarios para que ese dato esté disponible.
-- El archivo debe ser público y pesar menos de 50 MB, que es el límite práctico usado por este bot para enviarlo mediante Telegram.
-- Algunas publicaciones requieren autenticación o no son compatibles con `yt-dlp`. Puedes indicar una ruta a un archivo de cookies con `COOKIES_FILE`, pero nunca compartas ese archivo ni lo subas al repositorio.
-- Usa el bot únicamente con contenido que tengas permiso para descargar y conservar. Respeta los términos de servicio y los derechos de autor de cada plataforma.
-
-## Comprobaciones locales
-
-```bash
-python -m py_compile bot.py
-```
+Las historias privadas, cuentas privadas y publicaciones protegidas no se pueden descargar sin una sesión autorizada. El bot no evita controles de acceso ni descarga contenido sin permiso. Las plataformas pueden cambiar sus endpoints y romper temporalmente `yt-dlp`, por lo que conviene mantenerlo actualizado.
