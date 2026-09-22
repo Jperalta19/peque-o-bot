@@ -130,7 +130,15 @@ def _select_format(info: dict) -> tuple[str, int, int]:
 
 def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
     output_template = str(Path(output_dir) / "reel.%(ext)s")
-    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as analyzer:
+    cookies_file = os.getenv("COOKIES_FILE", "").strip()
+    if cookies_file and not Path(cookies_file).is_file():
+        raise FileNotFoundError(f"No existe el archivo de cookies configurado: {cookies_file}")
+
+    analyze_options = {"quiet": True, "no_warnings": True}
+    if cookies_file:
+        analyze_options["cookiefile"] = cookies_file
+
+    with yt_dlp.YoutubeDL(analyze_options) as analyzer:
         info = analyzer.extract_info(url, download=False)
         format_id, height, estimated_size = _select_format(info)
 
@@ -145,8 +153,6 @@ def download_reel(url: str, output_dir: str) -> tuple[Path, str, int, int]:
         "retries": 2,
         "socket_timeout": DOWNLOAD_TIMEOUT,
     }
-
-    cookies_file = os.getenv("COOKIES_FILE", "").strip()
     if cookies_file:
         options["cookiefile"] = cookies_file
 
